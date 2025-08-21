@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+.dist/
+.build/
+.pytest_cache/
+.mypy_cache/
+.cache/
+
+# Virtual envs
+.venv/
+venv/
+ENV/
+
+# IDE/editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# App/Secrets
+.env
+.env.*
+.secrets/
+.streamlit/secrets.toml
+
+# Logs
+logs/
+*.log
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Node (if present)
+node_modules/

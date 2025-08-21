@@ -1,0 +1,54 @@
+################################################################################
+# 📦 Core SDK - Portia Agent SDK with Google integrations (Gmail + Sheets)
+################################################################################
+portia-sdk-python[google]==0.7.0
+
+################################################################################
+# 🧠 Core Runtime Utilities
+################################################################################
+python-dotenv==1.1.1           # Load environment variables from .env files
+pandas==2.3.2                  # DataFrames + CSV/Excel manipulation
+requests==2.32.5               # HTTP requests made simple
+typing-extensions==4.14.1      # Extra typing features (for older Python compatibility)
+
+################################################################################
+# 🧾 Data parsing + document tools
+################################################################################
+pypdf==6.0.0                   # Read and extract text from PDF files
+python-docx==1.2.0             # Create and read Microsoft Word (.docx) files
+docx2txt==0.9                  # Extract plain text from .docx files
+openpyxl==3.1.5                # Read/write Excel (.xlsx) files
+
+################################################################################
+# 🖥️ Web UI (local demo/testing UI)
+################################################################################
+streamlit==1.48.1              # Build fast interactive dashboards for agents
+
+################################################################################
+# 🧬 Pydantic (data validation & models)
+################################################################################
+pydantic==2.11.7               # Core data models used across the stack
+pydantic-core==2.33.2          # Internal runtime for pydantic (must match above)
+
+################################################################################
+# 🧠 LangChain ecosystem (agent orchestration + LLM logic)
+################################################################################
+langchain==0.3.27              # Main LangChain framework
+langchain-core==0.3.74         # Core building blocks of LangChain
+langchain-anthropic==0.3.3     # Anthropic model bindings for LangChain
+langchain-openai==0.3.30       # OpenAI model bindings for LangChain
+langgraph==0.2.76              # Declarative graph-based agent orchestration
+langsmith==0.3.45              # LangChain observability & tracing SDK
+
+################################################################################
+# 🔌 Other dependencies (used by Portia SDK or LangChain tools)
+################################################################################
+instructor==1.10.0             # Structured LLM output validation with Pydantic
+loguru==0.7.3                  # Developer-friendly logging
+posthog==6.6.0                 # Telemetry + usage analytics (used internally)
+mcp==1.13.0                    # Multi-agent coordination protocols
+anthropic==0.55.0              # Anthropic's official Python SDK
+litellm==1.75.9                # Unified LLM interface (used under the hood)
+jinja2==3.1.6                  # Templating engine (used for dynamic prompt rendering)
+jsonref==1.1.0                 # Resolve $ref in JSON schemas
+click==8.2.1                   # Command-line interface builder
