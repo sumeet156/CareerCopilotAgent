@@ -35,11 +35,25 @@ st.markdown("""
         margin-bottom: 2rem;
     }
     .feature-card {
-        background: #f8f9fa;
-        padding: 1.5rem;
-        border-radius: 10px;
-        border-left: 4px solid #1f77b4;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 2rem;
+        border-radius: 15px;
+        border: none;
         margin: 1rem 0;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        color: white;
+    }
+    .feature-card h4 {
+        color: white !important;
+        margin-bottom: 1rem;
+        font-weight: 600;
+    }
+    .feature-card ul {
+        color: rgba(255, 255, 255, 0.9) !important;
+    }
+    .feature-card li {
+        margin-bottom: 0.5rem;
+        padding-left: 0.5rem;
     }
     .success-box {
         background: #d4edda;
@@ -182,8 +196,8 @@ def job_email_scanner():
     with col1:
         st.markdown("""
         <div class="feature-card">
-        <h4>🔍 What this tool does:</h4>
-        <ul>
+        <h4 style="color: #1f77b4;">🔍 What this tool does:</h4>
+        <ul style="color: #333333;">
             <li>Scans your Gmail for job-related emails</li>
             <li>Identifies recruiter messages and job opportunities</li>
             <li>Extracts company names, positions, and deadlines</li>
@@ -426,8 +440,8 @@ def interview_prep():
     with col1:
         st.markdown("""
         <div class="feature-card">
-        <h4>🎯 Interview Prep Features:</h4>
-        <ul>
+        <h4 style="color: #1f77b4;">🎯 Interview Prep Features:</h4>
+        <ul style="color: #333333;">
             <li>10-12 comprehensive questions covering all categories</li>
             <li>Behavioral questions with STAR method guidance</li>
             <li>Technical questions specific to your role</li>
