@@ -1,7 +1,13 @@
 """Minimal resume text extraction placeholder tool."""
-from typing import Dict
+from pydantic import BaseModel, Field
 
+class ResumeTextInput(BaseModel):
+    text: str = Field(..., description="Raw resume text")
 
-def extract_resume_text(text: str) -> Dict:
+class ResumeTextOutput(BaseModel):
+    text: str = Field(..., description="Extracted resume text")
+    chars: int = Field(..., description="Character count")
+
+def extract_resume_text(input: ResumeTextInput) -> ResumeTextOutput:
     # In real usage you'd parse PDF/DOCX. For now, return text as-is.
-    return {"text": text, "chars": len(text)}
+    return ResumeTextOutput(text=input.text, chars=len(input.text))

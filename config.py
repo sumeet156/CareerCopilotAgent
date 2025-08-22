@@ -76,5 +76,31 @@ class CareerCopilotConfig:
         # Either OpenAI or Google key should be present; Portia API key enables cloud storage & tools
         return bool(self.openai_api_key or self.google_api_key)
 
+    # ----- New helpers for UI status -----
+    def has_portia_cloud(self) -> bool:
+        return bool(self.portia_api_key)
+
+    def google_oauth_ready(self) -> bool:
+        return all([
+            os.getenv("GOOGLE_CLIENT_ID"),
+            os.getenv("GOOGLE_CLIENT_SECRET"),
+            os.getenv("GOOGLE_REDIRECT_URI"),
+        ])
+
+    def sheet_target_ready(self) -> bool:
+        return bool(os.getenv("SHEET_ID"))
+
+    def status_summary(self) -> dict:
+        """Return a structured status block the UI can leverage."""
+        provider = getattr(self.portia_config, "llm_provider", None)
+        provider_name = getattr(provider, "name", str(provider)) if provider else "unknown"
+        return {
+            "llm_provider": provider_name,
+            "has_llm_key": self.is_configured(),
+            "has_portia_api_key": self.has_portia_cloud(),
+            "google_oauth_ready": self.google_oauth_ready(),
+            "sheet_target_ready": self.sheet_target_ready(),
+        }
+
 # Global configuration instance
 config = CareerCopilotConfig()

@@ -147,44 +147,79 @@ def setup_sidebar():
     )
     
     st.sidebar.markdown("---")
-    st.sidebar.markdown("**Configuration Status:**")
-    st.sidebar.success("✅ Portia SDK Connected")
-    
-    # Show available tools
+    st.sidebar.markdown("**Configuration Status**")
+
+    status = config.status_summary()
+    provider = status.get("llm_provider")
+    if status["has_llm_key"]:
+        st.sidebar.success(f"✅ LLM Provider: {provider}")
+    else:
+        st.sidebar.error("⚠️ Missing OPENAI_API_KEY or GOOGLE_API_KEY")
+
+    if status["has_portia_api_key"]:
+        st.sidebar.success("✅ Portia Cloud (API Key loaded)")
+    else:
+        st.sidebar.warning("☁️ Running w/out PORTIA_API_KEY (tools may be unavailable)")
+
+    if status["google_oauth_ready"]:
+        st.sidebar.success("✅ Google OAuth vars present")
+    else:
+        st.sidebar.warning("🔑 Google OAuth incomplete")
+
+    if status["sheet_target_ready"]:
+        st.sidebar.info("📄 Sheet target configured")
+    else:
+        st.sidebar.warning("📄 SHEET_ID missing")
+
+    # Optional debug / diagnostics toggle
+    show_debug = st.sidebar.checkbox("Show Portia Diagnostics", value=False)
+
     try:
         tools = orchestrator.get_available_tools()
         gmail_tools = [t for t in tools if 'gmail' in t['id'].lower()]
-        sheets_tools = [t for t in tools if 'sheet' in t['id'].lower()]
-        
-        st.sidebar.info(f"📧 Gmail Tool: {'Enabled' if gmail_tools else 'Setup Required'} ({len(gmail_tools)} tools)")
-        st.sidebar.info(f"📊 Sheets Tool: {'Enabled' if sheets_tools else 'Setup Required'} ({len(sheets_tools)} tools)")
-        
-        # Show total tools available
-        st.sidebar.markdown(f"**Total Tools Available:** {len(tools)}")
-        
-        # Debug: Show first few tools
-        if st.sidebar.button("🔍 Show Available Tools"):
-            st.sidebar.write("Available tools:")
-            for tool in tools[:5]:  # Show first 5 tools
-                st.sidebar.write(f"- {tool['name']}")
-            if len(tools) > 5:
-                st.sidebar.write(f"... and {len(tools) - 5} more")
-        
-        # Test Portia connection
-        if st.sidebar.button("🧪 Test Portia Connection"):
-            try:
-                test_result = orchestrator.portia.run("What is 2+2?")
-                if test_result and hasattr(test_result, 'final_output'):
-                    st.sidebar.success("✅ Portia working!")
-                else:
-                    st.sidebar.error("❌ Portia not responding")
-            except Exception as e:
-                st.sidebar.error(f"❌ Portia error: {str(e)[:50]}...")
-                
+        sheets_tools = [t for t in tools if 'sheet' in t['id'].lower() or 'sheet' in t['name'].lower()]
+
+        gmail_status = ("Enabled", "success") if gmail_tools else ("Not Detected", "warning")
+        sheets_status = ("Enabled", "success") if sheets_tools else ("Not Detected", "warning")
+
+        getattr(st.sidebar, gmail_status[1])(f"📧 Gmail Tool: {gmail_status[0]}")
+        getattr(st.sidebar, sheets_status[1])(f"📊 Sheets Tool: {sheets_status[0]}")
+
+        if show_debug:
+            st.sidebar.caption(f"Tools detected: {len(tools)}")
+            if tools:
+                for tool in tools[:8]:
+                    st.sidebar.write(f"• {tool['name']}")
+            else:
+                st.sidebar.write("No tools returned by registry. If you expect Gmail/Sheets, confirm in Portia dashboard.")
+
+            if st.sidebar.button("Ping Portia"):
+                try:
+                    # Minimal prompt; call plan.run() for SDKs that return a Plan
+                    plan = orchestrator.portia.run("Return ONLY the result of 2+2.")
+                    out = None
+                    try:
+                        out = plan.run()
+                    except AttributeError:
+                        # Some SDK variants may directly return text/dict
+                        out = getattr(plan, 'final_output', plan)
+                    if isinstance(out, dict) and 'value' in out:
+                        out_val = out['value']
+                    else:
+                        out_val = out
+                    st.sidebar.success(f"LLM OK (response: {str(out_val)[:20]})")
+                except Exception as e:
+                    msg = str(e)
+                    if 'validation error' in msg.lower():
+                        st.sidebar.error("Portia validation issue (possible incompatible SDK / tool schema)")
+                    else:
+                        st.sidebar.error(f"Portia error: {msg[:80]}")
+                    if show_debug:
+                        st.sidebar.code(msg)
     except Exception as e:
-        st.sidebar.error(f"Error checking tools: {str(e)}")
-        st.sidebar.info("📧 Gmail Tool: Unknown")
-        st.sidebar.info("📊 Sheets Tool: Unknown")
+        st.sidebar.error(f"Tool inspection failed: {e}")
+        if show_debug:
+            st.sidebar.code(str(e))
 
 def job_email_scanner():
     """Job email scanner using Portia Gmail tool"""
