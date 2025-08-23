@@ -1,73 +1,47 @@
 import os
 import json
 from dotenv import load_dotenv
-from portia import Portia
+from portia import Portia, DefaultToolRegistry
 from config import config
 from portia.cli import CLIExecutionHooks
 from portia import Config, StorageClass, LogLevel, LLMProvider
-
-# Try to import a cloud DefaultToolRegistry; fall back to open-source registry if unavailable
-DefaultToolRegistry = None  # type: ignore
-for modpath, name in (
-    ("portia.tools", "DefaultToolRegistry"),
-    ("portia.cloud_tools.registry", "DefaultToolRegistry"),
-    ("portia.cloud_tools.registry", "PortiaToolRegistry"),
-):
-    try:
-        module = __import__(modpath, fromlist=[name])
-        DefaultToolRegistry = getattr(module, name)
-        break
-    except Exception:
-        continue
 
 load_dotenv()
 
 # Build Portia using centralized config (OpenAI first, Gemini fallback)
 cfg = config.portia_config
 
-# Use DefaultToolRegistry for better tool loading; fall back to open-source registry or empty
-try:
-    if DefaultToolRegistry is None:
-        raise ImportError("DefaultToolRegistry not available; falling back to open_source_tool_registry")
-    # Some versions accept config, some do not
-    try:
-        tools = DefaultToolRegistry()
-    except TypeError:
-        try:
-            tools = DefaultToolRegistry(config=cfg)
-        except TypeError:
-            tools = DefaultToolRegistry(cfg)
-    print("DefaultToolRegistry created successfully")
-except Exception as e:
-    print(f"Error creating DefaultToolRegistry: {e}")
-    # Prefer letting Portia manage cloud tools from your account by not passing a registry
-    tools = None
-    print("Falling back to Portia-managed cloud tools (tools=None). Ensure tools are enabled in your Portia dashboard.")
+# Use DefaultToolRegistry with config as recommended
+tools = DefaultToolRegistry(config=cfg)
 
 # Optionally, add your own Python helpers as tools too:
 try:
     from tools.ats_scoring import ats_score
     from tools.jd_parser import normalize_jd
     from tools.resume_parser import extract_resume_text
-    if tools is not None and hasattr(tools, "add_tool"):
+    if hasattr(tools, "add_tool"):
         tools.add_tool(ats_score)
         tools.add_tool(normalize_jd)
         tools.add_tool(extract_resume_text)
         print("Custom tools added successfully via add_tool")
-    else:
-        # When tools=None, Portia cloud tools are used; skip local additions
-        print("Custom tools skipped (using cloud tools or unsupported registry API)")
 except Exception as e:
     print(f"Error adding custom tools: {e}")
 
 portia = Portia(config=cfg, tools=tools, execution_hooks=CLIExecutionHooks())
 
-
 class CareerCopilotOrchestrator:
+    def _serialize_if_needed(self, value):
+        """Serialize dict or list to JSON string; pass through strings and other types."""
+        if isinstance(value, (dict, list)):
+            try:
+                return json.dumps(value, ensure_ascii=False)
+            except Exception:
+                return str(value)
+        return value
     def __init__(self):
         self.portia = portia
         self.tools = tools
-        
+
     def get_available_tools(self):
         """Get list of available tools"""
         try:
@@ -117,10 +91,11 @@ class CareerCopilotOrchestrator:
     def execute_task(self, task_description):
         """Execute a career-related task"""
         try:
-            full_task = f"{CAREER_TASK}\n\nUser request: {task_description}"
+            full_task = f"{CAREER_TASK}\n\nUser request: {self._serialize_if_needed(task_description)}"
             plan = self.portia.run(full_task)
             # Execute the plan so tools run and OAuth prompts appear in terminal if needed
-            return plan.run()
+            result = plan.run()
+            return self._serialize_if_needed(result)
         except Exception as e:
             if _is_openai_quota_error(e):
                 return self._retry_with_gemini(full_task)
@@ -142,36 +117,126 @@ class CareerCopilotOrchestrator:
         Return a concise summary: total scanned, matched, and rows written.
         """
         try:
-            plan = self.portia.run(prompt)
-            return plan.run()
+            plan = self.portia.run(self._serialize_if_needed(prompt))
+            result = plan.run()
+            return self._serialize_if_needed(result)
         except Exception as e:
             if _is_openai_quota_error(e):
-                return self._retry_with_gemini(prompt)
+                return self._retry_with_gemini(self._serialize_if_needed(prompt))
             raise
 
     def analyze_resume_and_job(self, resume_text: str, job_description: str, user_profile: dict | None = None) -> dict:
-        """Analyze resume vs JD and return structured JSON with ATS score and suggestions."""
-        profile = json.dumps(user_profile or {}, ensure_ascii=False)
+        """Simple, error-free resume optimization: ATS score + suggestions only."""
+        result = {}
+        try:
+            # 1. ATS score
+            prompt_ats = f"Rate the following resume for the given job description on a scale of 0 to 100.\nResume:\n{resume_text}\nJob Description:\n{job_description}\nReturn only the score as a number."
+            out_ats = self.portia.run(self._serialize_if_needed(prompt_ats))
+            ats_score = self._extract_simple_output(out_ats)
+            result['ats_score'] = int(ats_score) if str(ats_score).isdigit() else ats_score
+
+            # 2. Suggestions
+            prompt_suggestions = f"Suggest 5-10 improvements to the resume to better match the job description.\nResume:\n{resume_text}\nJob Description:\n{job_description}\nReturn a numbered list."
+            out_suggestions = self.portia.run(self._serialize_if_needed(prompt_suggestions))
+            suggestions = self._extract_simple_output(out_suggestions)
+            result['suggestions'] = suggestions
+
+            return result
+        except Exception as e:
+            return {"error": str(e)}
+
+    def _extract_simple_output(self, out):
+        """Helper to extract string output from Portia tool result."""
+        if hasattr(out, 'output'):
+            out = out.output
+        out = self._serialize_if_needed(out)
+        if isinstance(out, dict):
+            val = out.get("value", out)
+            if isinstance(val, str):
+                return val.strip()
+            return str(val)
+        if isinstance(out, str):
+            return out.strip()
+        return str(out)
+
+    def generate_interview_questions(self, job_description: str, user_profile: dict | None = None) -> dict:
+        """Generate 10-12 interview Q&A tailored to the role and profile. Always return a valid JSON array."""
+        profile = self._serialize_if_needed(user_profile or {})
         prompt = f"""
-        You are an expert ATS optimizer.
+        You are an expert interview coach. Create 10-12 interview questions and sample answers based on the provided user profile and job description.
+
         USER PROFILE: {profile}
-        RESUME TEXT:\n{resume_text}
-        JOB DESCRIPTION:\n{job_description}
+        JOB DESCRIPTION:
+        {job_description}
 
-        Perform:
-        - Extract resume skills
-        - Extract JD keywords
-        - ATS score 0-100
-        - 8-10 improvements
-        - Tailored 3-4 line summary
-        - Skill gaps and recommendations
+        Your response MUST be a single, valid JSON object containing a single key "interview_prep", which is an array of question objects. Do not include any other text, greetings, or explanations before or after the JSON.
+        Each object in the "interview_prep" array must have the following keys: "category", "question", "sample_answer", "key_points", "interviewer_focus".
 
-        Return valid JSON only with keys: ats_score, resume_skills, job_keywords, improvements, tailored_summary, skill_gaps, recommendations.
+        Example format:
+        {{"interview_prep": [{{"category": "technical", "question": "...", "sample_answer": "...", "key_points": [], "interviewer_focus": "..."}}]}}
         """
         try:
-            out = self.portia.run(prompt).run()
+            raw_output = self.portia.run(prompt)
+            output_data = self._extract_simple_output(raw_output)
+
+            if isinstance(output_data, str):
+                json_start_index = output_data.find('{')
+                if json_start_index == -1:
+                    return {"error": "Agent returned a non-JSON response.", "raw": output_data}
+                
+                json_end_index = output_data.rfind('}') + 1
+                if json_end_index == 0:
+                     return {"error": "Agent returned an incomplete JSON response.", "raw": output_data}
+
+                clean_json_str = output_data[json_start_index:json_end_index]
+                
+                try:
+                    data = json.loads(clean_json_str)
+                except json.JSONDecodeError:
+                    return {"error": "Agent returned a malformed JSON string after cleaning.", "raw": clean_json_str}
+            elif isinstance(output_data, dict):
+                data = output_data
+            else:
+                 return {"error": "Agent returned an unexpected data type.", "raw": str(output_data)}
+
+            if isinstance(data, dict) and "interview_prep" in data and isinstance(data["interview_prep"], list):
+                return {"interview_prep": data["interview_prep"]}
+            else:
+                return {"error": "Agent did not return a valid 'interview_prep' array inside a JSON object.", "raw": data}
+
+        except Exception as e:
+            return {"error": str(e)}
+
+    def update_job_tracker(self, job_data: dict, sheet_id: str | None = None, sheet_tab: str | None = None) -> dict:
+        """Append one application row to Google Sheets via Portia Sheets tool. Always serialize row as JSON string and force output to be a JSON string."""
+        sid = sheet_id or os.getenv("SHEET_ID", "")
+        stab = sheet_tab or os.getenv("SHEET_TAB", "Applications")
+        if not sid:
+            return {"error": "Missing SHEET_ID (env or argument)."}
+        # Convert job_data to a flat list of values for Sheets tool
+        row_values = [job_data.get(k, "") for k in [
+            "date_applied", "company", "position", "status", "source", "contact_person", "next_action", "application_link", "notes"
+        ]]
+        import json
+        row_json = json.dumps(row_values, ensure_ascii=False)
+        prompt = f"""
+        Using the Google Sheets tool, append this job application row to spreadsheet id '{sid}', tab '{stab}'.
+        Ensure headers exist; create if needed. Avoid duplicates based on (date_applied, company, position).
+        Row: {row_json}
+        Return ONLY a valid JSON string with keys: success (bool), row_count_appended (int), message (str). Do not return any other text or explanation.
+        """
+        try:
+            out = self.portia.run(self._serialize_if_needed(prompt))
+            if hasattr(out, 'output'):
+                out = out.output
+            out = self._serialize_if_needed(out)
+            # Always parse output as JSON string
+            if isinstance(out, str):
+                try:
+                    return json.loads(out)
+                except Exception:
+                    return {"raw": out}
             if isinstance(out, dict):
-                # Some Portia tools wrap output in {"value": ...}
                 val = out.get("value", out)
                 if isinstance(val, str):
                     try:
@@ -179,156 +244,10 @@ class CareerCopilotOrchestrator:
                     except Exception:
                         return {"raw": val}
                 return val
-            if isinstance(out, str):
-                try:
-                    return json.loads(out)
-                except Exception:
-                    return {"raw": out}
             return {"raw": out}
         except Exception as e:
-            if _is_openai_quota_error(e):
-                try:
-                    out = self._retry_with_gemini(prompt)
-                    if isinstance(out, dict):
-                        val = out.get("value", out)
-                        if isinstance(val, str):
-                            try:
-                                return json.loads(val)
-                            except Exception:
-                                return {"raw": val}
-                        return val
-                    if isinstance(out, str):
-                        try:
-                            return json.loads(out)
-                        except Exception:
-                            return {"raw": out}
-                    return {"raw": out}
-                except Exception as ee:
-                    return {"error": str(ee)}
             return {"error": str(e)}
-
-    def generate_interview_questions(self, job_description: str, user_profile: dict | None = None) -> dict:
-        """Generate 10-12 interview Q&A tailored to the role and profile."""
-        profile = json.dumps(user_profile or {}, ensure_ascii=False)
-        prompt = f"""
-        Create 10-12 interview Q&A tailored to the following role and profile.
-        USER PROFILE: {profile}
-        JOB DESCRIPTION:\n{job_description}
-
-        Provide a JSON array named interview_prep where each item has:
-        - category (behavioral|technical|system design|other)
-        - question
-        - sample_answer
-        - key_points (array)
-        - interviewer_focus
-        Return JSON only.
-        """
-        try:
-            out = self.portia.run(prompt).run()
-            if isinstance(out, dict):
-                val = out.get("value", out)
-                if isinstance(val, str):
-                    try:
-                        data = json.loads(val)
-                    except Exception:
-                        data = {"raw": val}
-                else:
-                    data = val
-            elif isinstance(out, str):
-                try:
-                    data = json.loads(out)
-                except Exception:
-                    data = {"raw": out}
-            else:
-                data = {"raw": out}
-
-            # Normalize to {"interview_prep": [...]}
-            if isinstance(data, dict) and "interview_prep" in data:
-                return {"interview_prep": data["interview_prep"]}
-            if isinstance(data, list):
-                return {"interview_prep": data}
-            return data
-        except Exception as e:
-            if _is_openai_quota_error(e):
-                try:
-                    out = self._retry_with_gemini(prompt)
-                    if isinstance(out, dict):
-                        val = out.get("value", out)
-                        if isinstance(val, str):
-                            try:
-                                data = json.loads(val)
-                            except Exception:
-                                data = {"raw": val}
-                        else:
-                            data = val
-                    elif isinstance(out, str):
-                        try:
-                            data = json.loads(out)
-                        except Exception:
-                            data = {"raw": out}
-                    else:
-                        data = {"raw": out}
-                    if isinstance(data, dict) and "interview_prep" in data:
-                        return {"interview_prep": data["interview_prep"]}
-                    if isinstance(data, list):
-                        return {"interview_prep": data}
-                    return data
-                except Exception as ee:
-                    return {"error": str(ee)}
-            return {"error": str(e)}
-
-    def update_job_tracker(self, job_data: dict, sheet_id: str | None = None, sheet_tab: str | None = None) -> dict:
-        """Append one application row to Google Sheets via Portia Sheets tool."""
-        sid = sheet_id or os.getenv("SHEET_ID", "")
-        stab = sheet_tab or os.getenv("SHEET_TAB", "Applications")
-        if not sid:
-            return {"error": "Missing SHEET_ID (env or argument)."}
-        payload = json.dumps(job_data, ensure_ascii=False)
-        prompt = f"""
-        Using the Google Sheets tool, append this job application row to spreadsheet id '{sid}', tab '{stab}'.
-        Ensure headers exist; create if needed. Avoid duplicates based on (date_applied, company, position).
-        Row JSON: {payload}
-        Return a summary JSON with keys: success (bool), row_count_appended (int), message (str).
-        """
-        try:
-            out = self.portia.run(prompt).run()
-            if isinstance(out, dict):
-                return out.get("value", out)
-            if isinstance(out, str):
-                try:
-                    return json.loads(out)
-                except Exception:
-                    return {"raw": out}
-            return {"raw": out}
-        except Exception as e:
-            if _is_openai_quota_error(e):
-                try:
-                    out = self._retry_with_gemini(prompt)
-                    if isinstance(out, dict):
-                        return out.get("value", out)
-                    if isinstance(out, str):
-                        try:
-                            return json.loads(out)
-                        except Exception:
-                            return {"raw": out}
-                    return {"raw": out}
-                except Exception as ee:
-                    return {"error": str(ee)}
-            return {"error": str(e)}
-
-    def _retry_with_gemini(self, prompt: str):
-        """Rebuild Portia with Gemini and retry the same prompt; returns plan.run() output."""
-        print("OpenAI quota/rate limit encountered. Falling back to Google Gemini and retrying...")
-        gemini_cfg = Config.from_default(
-            llm_provider=LLMProvider.GOOGLE,
-            default_model="google/gemini-1.5-flash",
-            storage_class=StorageClass.CLOUD if os.getenv("PORTIA_API_KEY") else StorageClass.MEMORY,
-            default_log_level=LogLevel.DEBUG if os.getenv("PORTIA_API_KEY") else LogLevel.INFO,
-        )
-        self.portia = Portia(config=gemini_cfg, tools=self.tools, execution_hooks=CLIExecutionHooks())
-        return self.portia.run(prompt).run()
-
-
+# ...existing code...
 def _is_openai_quota_error(err: Exception) -> bool:
     msg = str(err).lower()
     return (
@@ -345,6 +264,9 @@ You are the Career Copilot Orchestrator. Capabilities:
 2) Append/update to Google Sheet 'Career Copilot Tracker' tab 'Applications'.
 3) Tailor resume to a JD: extract resume skills, parse JD keywords, compute ATS score, propose 5–10 edits + a targeted summary.
 4) Interview prep: generate 8–12 Q&A grounded in the user's bio/skills + the JD.
+
+IMPORTANT: For every step in a multi-step plan, before passing any output to a tool, always serialize dicts/lists to a JSON string. Never pass a Python dict or object directly; always convert to a string. This applies to all intermediate outputs, not just the initial input.
+
 Pause and ask clarifications when anything is missing (OAuth, Sheet not found, user profile).
 """
 

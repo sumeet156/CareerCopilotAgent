@@ -344,38 +344,18 @@ def display_job_emails(result):
 def resume_optimizer():
     """Resume optimization using Portia AI"""
     st.header("📄 Resume Optimizer")
-    st.markdown("Upload your resume and job description to get AI-powered optimization suggestions.")
+    st.markdown("Write your resume bio/profile and Target job description to get AI-powered optimization suggestions.")
     
     col1, col2 = st.columns(2)
     
     with col1:
         st.subheader("📋 Your Resume")
-        
-        # File upload
-        uploaded_file = st.file_uploader(
-            "Upload Resume (PDF, DOCX, TXT)",
-            type=['pdf', 'docx', 'txt'],
-            help="Upload your current resume for analysis"
-        )
-        
-        # Text area as alternative
         resume_text = st.text_area(
-            "Or paste your resume text here:",
+            "Paste your resume text here:",
             height=300,
             placeholder="Paste your resume content here..."
         )
-        
-        # Use uploaded file or text
-        final_resume_text = ""
-        if uploaded_file:
-            if uploaded_file.type == "text/plain":
-                final_resume_text = str(uploaded_file.read(), "utf-8")
-            else:
-                st.info("📄 File uploaded. Processing...")
-                # Note: In a full implementation, you'd extract text from PDF/DOCX
-                final_resume_text = f"[Uploaded file: {uploaded_file.name}]"
-        elif resume_text:
-            final_resume_text = resume_text
+        final_resume_text = resume_text
     
     with col2:
         st.subheader("🎯 Target Job")
@@ -391,73 +371,18 @@ def resume_optimizer():
                 with st.spinner("Analyzing your resume and optimizing for the target role..."):
                     try:
                         result = orchestrator.analyze_resume_and_job(
-                            final_resume_text, 
-                            job_description, 
+                            final_resume_text,
+                            job_description,
                             st.session_state.user_profile
                         )
-                        
                         if 'error' in result:
                             st.error(f"❌ Error: {result['error']}")
                         else:
                             display_resume_analysis(result)
-                            
                     except Exception as e:
                         st.error(f"❌ Analysis failed: {str(e)}")
             else:
                 st.warning("⚠️ Please provide both resume and job description.")
-
-def display_resume_analysis(result):
-    """Display resume analysis results"""
-    if isinstance(result, dict):
-        st.success("✅ Resume analysis completed!")
-        
-        # ATS Score
-        ats_score = result.get('ats_score', 0)
-        st.metric("🎯 ATS Compatibility Score", f"{ats_score}/100")
-        
-        # Progress bar for ATS score
-        progress_color = "🟢" if ats_score >= 70 else "🟡" if ats_score >= 50 else "🔴"
-        st.progress(ats_score / 100)
-        st.caption(f"{progress_color} {get_ats_feedback(ats_score)}")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Resume skills
-            if 'resume_skills' in result:
-                st.subheader("💼 Your Skills")
-                for skill in result['resume_skills']:
-                    st.badge(skill)
-            
-            # Skill gaps
-            if 'skill_gaps' in result:
-                st.subheader("🎯 Skill Gaps to Address")
-                for gap in result['skill_gaps']:
-                    st.write(f"• {gap}")
-        
-        with col2:
-            # Job keywords
-            if 'job_keywords' in result:
-                st.subheader("🔑 Job Keywords")
-                for keyword in result['job_keywords']:
-                    st.badge(keyword, outline=True)
-        
-        # Tailored summary
-        if 'tailored_summary' in result:
-            st.subheader("✨ Tailored Professional Summary")
-            st.info(result['tailored_summary'])
-        
-        # Improvements
-        if 'improvements' in result:
-            st.subheader("🔧 Resume Improvements")
-            for i, improvement in enumerate(result['improvements'], 1):
-                st.write(f"{i}. {improvement}")
-        
-        # Recommendations
-        if 'recommendations' in result:
-            st.subheader("💡 Action Items")
-            for rec in result['recommendations']:
-                st.write(f"• {rec}")
 
 def interview_prep():
     """Interview preparation using Portia AI"""
@@ -495,12 +420,12 @@ def interview_prep():
                             job_description, 
                             st.session_state.user_profile
                         )
-                        
                         if 'error' in result:
                             st.error(f"❌ Error: {result['error']}")
                         else:
+                            st.markdown("---")
+                            st.markdown("<h4 style='color:#1f77b4;'>📝 Interview Q&A</h4>", unsafe_allow_html=True)
                             display_interview_questions(result)
-                            
                     except Exception as e:
                         st.error(f"❌ Failed to generate questions: {str(e)}")
             else:
@@ -510,36 +435,38 @@ def display_interview_questions(result):
     """Display interview questions and answers"""
     if 'interview_prep' in result:
         st.success("✅ Interview preparation ready!")
-        
+        # Show final_output or value if present
+        if 'final_output' in result and result['final_output']:
+            st.markdown("---")
+            st.markdown("<h4 style='color:#1f77b4;'>📝 Interview Q&A</h4>", unsafe_allow_html=True)
+            st.write(result['final_output'])
+        elif 'value' in result and result['value']:
+            st.markdown("---")
+            st.markdown("<h4 style='color:#1f77b4;'>📝 Interview Q&A</h4>", unsafe_allow_html=True)
+            st.write(result['value'])
         questions = result['interview_prep']
-        
-        # Group by category
+        # If questions is a string, just print it
+        if isinstance(questions, str):
+            st.write(questions)
+            return
+        # Otherwise group by category
         categories = {}
         for q in questions:
             cat = q.get('category', 'general')
             if cat not in categories:
                 categories[cat] = []
             categories[cat].append(q)
-        
-        # Display by category
         for category, cat_questions in categories.items():
             st.subheader(f"📚 {category.title()} Questions")
-            
             for i, q in enumerate(cat_questions, 1):
                 with st.expander(f"Q{i}: {q.get('question', 'No question')}"):
-                    
-                    # Sample answer
                     if 'sample_answer' in q:
                         st.markdown("**💡 Sample Answer:**")
                         st.write(q['sample_answer'])
-                    
-                    # Key points
                     if 'key_points' in q and q['key_points']:
                         st.markdown("**🎯 Key Points to Cover:**")
                         for point in q['key_points']:
                             st.write(f"• {point}")
-                    
-                    # What interviewer looks for
                     if 'interviewer_focus' in q:
                         st.markdown("**🔍 What the Interviewer is Evaluating:**")
                         st.info(q['interviewer_focus'])
@@ -590,7 +517,8 @@ def job_tracker():
                         st.error(f"❌ Error: {result['error']}")
                     else:
                         st.success("✅ Application added to tracker!")
-                        st.json(result)
+                        # Optionally show details for debugging
+                        # st.json(result)  # Commented out to hide raw JSON
                         
                 except Exception as e:
                     st.error(f"❌ Failed to update tracker: {str(e)}")
@@ -630,6 +558,18 @@ def get_ats_feedback(score):
         return "Moderate match. Significant improvements needed."
     else:
         return "Poor match. Major revisions required to pass ATS screening."
+
+def display_resume_analysis(result):
+    """Display resume analysis results"""
+    if isinstance(result, dict):
+        st.success("✅ Resume analysis completed!")
+        ats_raw = result.get('ats_score', "0")
+        import re
+        score_match = re.search(r"(\d{1,3})", str(ats_raw))
+        ats_score = int(score_match.group(1)) if score_match else 0
+        st.metric("🎯 ATS Compatibility Score", f"{ats_score}/100")
+        st.progress(min(ats_score, 100) / 100)
+        # Only show ATS score for now (no summary or suggestions)
 
 if __name__ == "__main__":
     main()
