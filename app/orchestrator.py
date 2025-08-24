@@ -45,8 +45,30 @@ class CareerCopilotOrchestrator:
     def get_available_tools(self):
         """Get list of available tools"""
         try:
-            # Try list_tools()
-            if hasattr(self.tools, "list_tools"):
+            # Try get_tools() (Portia v0.7.0)
+            if hasattr(self.tools, "get_tools"):
+                try:
+                    result = self.tools.get_tools()
+                    tools_list = []
+                    raw = result if isinstance(result, list) else []
+                    for t in raw:
+                        if isinstance(t, dict):
+                            tools_list.append({
+                                "id": t.get("id") or t.get("name") or str(t),
+                                "name": t.get("name") or t.get("id") or str(t),
+                            })
+                        else:
+                            # Handle non-dict tool objects
+                            name = getattr(t, "name", None) or getattr(t, "tool_name", None) or t.__class__.__name__
+                            tid = getattr(t, "id", None) or name
+                            tools_list.append({"id": tid, "name": name})
+                    if tools_list:
+                        return tools_list
+                except Exception as e:
+                    print(f"Error using get_tools(): {e}")
+                    pass
+            # Try list_tools() for backward compatibility
+            elif hasattr(self.tools, "list_tools"):
                 try:
                     result = self.tools.list_tools()
                     tools_list = []
