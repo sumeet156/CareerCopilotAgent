@@ -86,11 +86,11 @@ def main():
     setup_sidebar()
     
     # Main tabs
-    tab1, tab2, tab3, tab4 = st.tabs([
+    # Note: Job Tracker tab temporarily disabled for hackathon submission due to API limitations
+    tab1, tab2, tab3 = st.tabs([
         "📧 Job Email Scanner", 
         "📄 Resume Optimizer", 
         "🎤 Interview Prep", 
-        "📊 Job Tracker"
     ])
     
     with tab1:
@@ -102,8 +102,10 @@ def main():
     with tab3:
         interview_prep()
     
-    with tab4:
-        job_tracker()
+    # Job Tracker hidden for hackathon submission
+    # Uncomment for future development
+    # with tab4:
+    #     job_tracker()
 
 def setup_sidebar():
     """Setup user profile sidebar"""
@@ -171,9 +173,6 @@ def setup_sidebar():
     else:
         st.sidebar.warning("📄 SHEET_ID missing")
 
-    # Optional debug / diagnostics toggle
-    show_debug = st.sidebar.checkbox("Show Portia Diagnostics", value=False)
-
     try:
         tools = orchestrator.get_available_tools()
         gmail_tools = [t for t in tools if 'gmail' in t['id'].lower()]
@@ -184,42 +183,8 @@ def setup_sidebar():
 
         getattr(st.sidebar, gmail_status[1])(f"📧 Gmail Tool: {gmail_status[0]}")
         getattr(st.sidebar, sheets_status[1])(f"📊 Sheets Tool: {sheets_status[0]}")
-
-        if show_debug:
-            st.sidebar.caption(f"Tools detected: {len(tools)}")
-            if tools:
-                for tool in tools[:8]:
-                    st.sidebar.write(f"• {tool['name']}")
-            else:
-                st.sidebar.write("No tools returned by registry. If you expect Gmail/Sheets, confirm in Portia dashboard.")
-
-            if st.sidebar.button("Ping Portia"):
-                try:
-                    # Minimal prompt; call plan.run() for SDKs that return a Plan
-                    plan = orchestrator.portia.run("Return ONLY the result of 2+2.")
-                    out = None
-                    try:
-                        out = plan.run()
-                    except AttributeError:
-                        # Some SDK variants may directly return text/dict
-                        out = getattr(plan, 'final_output', plan)
-                    if isinstance(out, dict) and 'value' in out:
-                        out_val = out['value']
-                    else:
-                        out_val = out
-                    st.sidebar.success(f"LLM OK (response: {str(out_val)[:20]})")
-                except Exception as e:
-                    msg = str(e)
-                    if 'validation error' in msg.lower():
-                        st.sidebar.error("Portia validation issue (possible incompatible SDK / tool schema)")
-                    else:
-                        st.sidebar.error(f"Portia error: {msg[:80]}")
-                    if show_debug:
-                        st.sidebar.code(msg)
     except Exception as e:
         st.sidebar.error(f"Tool inspection failed: {e}")
-        if show_debug:
-            st.sidebar.code(str(e))
 
 def job_email_scanner():
     """Job email scanner using Portia Gmail tool"""
